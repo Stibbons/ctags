@@ -47,6 +47,7 @@ SOURCES = \
 	rexx.c \
 	routines.c \
 	ruby.c \
+	rust.c \
 	scheme.c \
 	sh.c \
 	slang.c \
@@ -112,6 +113,7 @@ OBJECTS = \
 	rexx.$(OBJEXT) \
 	routines.$(OBJEXT) \
 	ruby.$(OBJEXT) \
+	rust.$(OBJEXT) \
 	scheme.$(OBJEXT) \
 	sh.$(OBJEXT) \
 	slang.$(OBJEXT) \
