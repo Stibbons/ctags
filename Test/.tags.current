@@ -1,0 +1,8 @@
+
+rust-sample.rs,143
+pub enum CharacterSet4,40
+    Standard,7,118
+    UrlSafe9,186
+pub struct Config13,256
+pub static STANDARD: Config 25,576
+fn main(80,2122

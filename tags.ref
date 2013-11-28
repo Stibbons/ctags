@@ -1,0 +1,2 @@
+Mrust-sample.rs	Test/rust-sample.rs	/^fn main()$/
+set	Test/rust-sample.rs	/^{$/
