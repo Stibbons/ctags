@@ -7,3 +7,5 @@ ctags
 ctags.ref
 tags
 tags.test
+dctags
+dctags.dSYM

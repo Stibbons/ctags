@@ -1,6 +1,7 @@
 /*
 *   INCLUDE FILES
 */
+
 #include "general.h"        /* must always come first */
 #include <setjmp.h>
 
@@ -27,6 +28,18 @@ typedef enum eException { ExceptionNone, ExceptionEOF } exception_t;
 
 typedef enum eKeywordId {
 	KEYWORD_NONE = -1,
+	KEYWORD_use,
+	KEYWORD_mut,
+	KEYWORD_type,
+	KEYWORD_let,
+    KEYWORD_fn,
+	KEYWORD_struct,
+	KEYWORD_impl,
+	KEYWORD_trait,
+	KEYWORD_enum,
+	KEYWORD_mod,
+	KEYWORD_static,
+	KEYWORD_macro_rules,
 } keywordId;
 
 /*  Used to determine whether keyword is valid for the current language and
@@ -39,6 +52,26 @@ typedef struct sKeywordDesc {
 
 typedef enum eTokenType {
 	TOKEN_NONE = -1,
+	TOKEN_CHARACTER,
+	// Don't need TOKEN_FORWARD_SLASH
+	TOKEN_FORWARD_SLASH,
+	TOKEN_KEYWORD,
+	TOKEN_IDENTIFIER,
+	TOKEN_STRING,
+	TOKEN_OPEN_PAREN,
+	TOKEN_CLOSE_PAREN,
+	TOKEN_OPEN_CURLY,
+	TOKEN_CLOSE_CURLY,
+	TOKEN_OPEN_SQUARE,
+	TOKEN_CLOSE_SQUARE,
+	TOKEN_SEMICOLON,
+	TOKEN_DOUBLE_COLON,  /* double colon indicates nested-name-specifier */
+	TOKEN_STAR,
+	TOKEN_SIGIL,
+	TOKEN_AMPERSAND,
+	TOKEN_LEFT_ARROW,
+	TOKEN_DOT,
+	TOKEN_COMMA          /* the comma character */
 } tokenType;
 
 typedef struct sTokenInfo {
@@ -59,26 +92,29 @@ static vString *scope;
 
 typedef enum {
 	GOTAG_UNDEFINED = -1,
-	GOTAG_PACKAGE,
 	GOTAG_FUNCTION,
-	GOTAG_CONST,
 	GOTAG_TYPE,
-	GOTAG_VAR,
+	GOTAG_LET,
 } goKind;
 
 static kindOption RustKinds[] = {
 	{TRUE, 'f', "fn", "functions"},
-	{TRUE, 'c', "const", "constants"},
+	{TRUE, 'l', "let", "let"},
 	{TRUE, 't', "type", "types"},
 };
 
 static keywordDesc RustKeywordTable[] = {
 	{"use", KEYWORD_use},
-	{"const", KEYWORD_const},
 	{"type", KEYWORD_type},
 	{"let", KEYWORD_let},
 	{"fn", KEYWORD_fn},
+	{"enum", KEYWORD_enum},
 	{"struct", KEYWORD_struct},
+	{"trait", KEYWORD_trait},
+	{"impl", KEYWORD_impl},
+	{"mod", KEYWORD_mod},
+	{"static", KEYWORD_static},
+	{"macro_rules!", KEYWORD_macro_rules},
 };
 
 /*
@@ -291,6 +327,14 @@ getNextChar:
 			token->type = TOKEN_STAR;
 			break;
 
+		case '&':
+			token->type = TOKEN_AMPERSAND;
+			break;
+
+		case '~':
+			token->type = TOKEN_SIGIL;
+			break;
+
 		case '.':
 			token->type = TOKEN_DOT;
 			break;
@@ -393,7 +437,27 @@ again:
 
 	// StructType     = "struct" "{" { FieldDecl ";" } "}"
 	// InterfaceType      = "interface" "{" { MethodSpec ";" } "}" .
-	if (isKeyword (token, KEYWORD_struct) || isKeyword (token, KEYWORD_interface))
+	if (isKeyword (token, KEYWORD_struct))
+	{
+		readToken (token);
+		Assert (isType (token, TOKEN_OPEN_CURLY));
+		skipToMatched (token);
+		return;
+	}
+
+	// StructType     = "trait" "{" { FieldDecl ";" } "}"
+	// InterfaceType      = "trait" "{" { MethodSpec ";" } "}" .
+	if (isKeyword (token, KEYWORD_trait))
+	{
+		readToken (token);
+		Assert (isType (token, TOKEN_OPEN_CURLY));
+		skipToMatched (token);
+		return;
+	}
+
+	// StructType     = "trait" "{" { FieldDecl ";" } "}"
+	// InterfaceType      = "trait" "{" { MethodSpec ";" } "}" .
+	if (isKeyword (token, KEYWORD_enum))
 	{
 		readToken (token);
 		Assert (isType (token, TOKEN_OPEN_CURLY));
@@ -413,19 +477,9 @@ again:
 	// PointerType = "*" BaseType .
 	// BaseType = Type .
 	// ChannelType = ( "chan" [ "<-" ] | "<-" "chan" ) ElementType .
-	if (isType (token, TOKEN_STAR) || isKeyword (token, KEYWORD_chan) || isType (token, TOKEN_LEFT_ARROW))
+	if (isType (token, TOKEN_STAR) || isType (token, TOKEN_AMPERSAND) || isType (token, TOKEN_SIGIL))
 	{
 		readToken (token);
-		goto again;
-	}
-
-	// MapType     = "map" "[" KeyType "]" ElementType .
-	// KeyType     = Type .
-	if (isKeyword (token, KEYWORD_map))
-	{
-		readToken (token);
-		Assert (isType (token, TOKEN_OPEN_SQUARE));
-		skipToMatched (token);
 		goto again;
 	}
 
@@ -433,7 +487,7 @@ again:
 	// Signature      = Parameters [ Result ] .
 	// Result         = Parameters | Type .
 	// Parameters     = "(" [ ParameterList [ "," ] ] ")" .
-	if (isKeyword (token, KEYWORD_func))
+	if (isKeyword (token, KEYWORD_fn))
 	{
 		readToken (token);
 		Assert (isType (token, TOKEN_OPEN_PAREN));
@@ -485,28 +539,12 @@ static void makeTag (tokenInfo *const token, const goKind kind)
 	}
 }
 
-static void parsePackage (tokenInfo *const token)
-{
-	tokenInfo *const name = newToken ();
-
-	readToken (name);
-	Assert (isType (name, TOKEN_IDENTIFIER));
-	makeTag (name, GOTAG_PACKAGE);
-	if (!scope && Option.include.qualifiedTags)
-	{
-		scope = vStringNew ();
-		vStringCopy (scope, name->string);
-	}
-
-	deleteToken (name);
-}
-
 static void parseFunctionOrMethod (tokenInfo *const token)
 {
-	// FunctionDecl = "func" identifier Signature [ Body ] .
+	// FunctionDecl = "fn" identifier Signature [ Body ] .
 	// Body         = Block.
 	//
-	// MethodDecl   = "func" Receiver MethodName Signature [ Body ] .
+	// MethodDecl   = "fn" Receiver MethodName Signature [ Body ] .
 	// Receiver     = "(" [ identifier ] [ "*" ] BaseTypeName ")" .
 	// BaseTypeName = identifier .
 	tokenInfo *const name = newToken ();
@@ -588,20 +626,14 @@ static void parseRustFile (tokenInfo *const token)
 		{
 			switch (token->keyword)
 			{
-				case KEYWORD_package:
-					parsePackage (token);
-					break;
-				case KEYWORD_func:
+				case KEYWORD_fn:
 					parseFunctionOrMethod (token);
-					break;
-				case KEYWORD_const:
-					parseConstTypeVar (token, GOTAG_CONST);
 					break;
 				case KEYWORD_type:
 					parseConstTypeVar (token, GOTAG_TYPE);
 					break;
-				case KEYWORD_var:
-					parseConstTypeVar (token, GOTAG_VAR);
+				case KEYWORD_let:
+					parseConstTypeVar (token, GOTAG_LET);
 					break;
 				default:
 					break;
